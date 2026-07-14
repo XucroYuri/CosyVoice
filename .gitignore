@@ -33,6 +33,8 @@ __pycache__/
 
 exp
 data
+/artifacts/portable/
+/runtime/
 raw_wav
 tensorboard
 **/*build*
