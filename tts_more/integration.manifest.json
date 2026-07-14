@@ -2,7 +2,7 @@
   "schema_version": 1,
   "component": "cosyvoice",
   "integration_version": "2.0.0",
-  "source_revision": "4dd2b07982103253e809aa1d1840108be3d303ba",
+  "source_revision": "12c9779b35e57b9ef5dde84d0416b3f7818daab6",
   "files": {
     "Build-Package.ps1": "e261cbada8b25067639ddfc0c7cc55296aa9b6f447dd4d01d860433085bed593",
     "Initialize.cmd": "d09ed209b42e410d939f7d61984895895eb3c4ee865301de3295f527daad562b",
