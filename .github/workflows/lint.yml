@@ -10,16 +10,8 @@ jobs:
     steps:
       - name: Fetch CosyVoice
         uses: actions/checkout@v7
-      - name: Checkout PR tip
-        run: |
-          set -eux
-          if [[ "${{ github.event_name }}" == "pull_request" ]]; then
-            # We are on a PR, so actions/checkout leaves us on a merge commit.
-            # Check out the actual tip of the branch.
-            git checkout ${{ github.event.pull_request.head.sha }}
-          fi
-          echo "commit_sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
-        id: get_pr_tip
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
       - name: Ensure no tabs
         run: |
           (! git grep -I -l $'\t' -- . ':(exclude)*.txt' ':(exclude)*.svg' ':(exclude)**Makefile' ':(exclude)**/contrib/**' ':(exclude)third_party' ':(exclude).gitattributes' ':(exclude).gitmodules' || (echo "The above files have tabs; please convert them to spaces"; false))
@@ -37,16 +29,8 @@ jobs:
           architecture: x64
       - name: Fetch CosyVoice
         uses: actions/checkout@v7
-      - name: Checkout PR tip
-        run: |
-          set -eux
-          if [[ "${{ github.event_name }}" == "pull_request" ]]; then
-            # We are on a PR, so actions/checkout leaves us on a merge commit.
-            # Check out the actual tip of the branch.
-            git checkout ${{ github.event.pull_request.head.sha }}
-          fi
-          echo "commit_sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
-        id: get_pr_tip
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
       - name: Run flake8
         run: |
           set -eux
