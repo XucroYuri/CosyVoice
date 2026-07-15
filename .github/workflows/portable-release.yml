@@ -28,8 +28,12 @@ jobs:
       - uses: actions/setup-python@v6
         with:
           python-version: "3.10"
-      - name: Validate controlled integration and immutable locks
-        run: python tts_more\tests\test_portable_integration.py -v
+      - name: Validate one-click portable contract and immutable locks
+        shell: pwsh
+        run: |
+          python tts_more\tests\test_portable_integration.py -v
+          if (-not (Select-String -LiteralPath Start.cmd -Pattern 'Invoke-PortableStart.ps1' -Quiet)) { throw 'Start.cmd bypasses the portable controller' }
+          if (-not (Test-Path -LiteralPath '使用说明-先看这里.txt' -PathType Leaf)) { throw 'portable root guide is missing' }
       - name: Build bootstrap and prove full is prohibited
         shell: pwsh
         env:
