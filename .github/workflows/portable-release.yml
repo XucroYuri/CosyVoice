@@ -21,34 +21,45 @@ jobs:
     runs-on: windows-latest
     env:
       PACKAGE_VERSION: ${{ inputs.version || (startsWith(github.ref, 'refs/tags/v') && github.ref_name) || '0.2.0-ci' }}
+      UV_PROJECT_ENVIRONMENT: ${{ runner.temp }}/tts-more-build-tools
     steps:
       - uses: actions/checkout@v7
         with:
           submodules: recursive
       - uses: actions/setup-python@v6
         with:
-          python-version: "3.10"
+          python-version: "3.11"
+      - name: Install frozen uv tool
+        uses: astral-sh/setup-uv@08807647e7069bb48b6ef5acd8ec9567f424441b # v8.1.0
+        with:
+          version: "0.11.28"
+      - name: Sync locked build audit tools
+        shell: pwsh
+        run: uv sync --locked --project tts_more/build-tools
       - name: Validate one-click portable contract and immutable locks
         shell: pwsh
         run: |
-          python tts_more\tests\test_portable_integration.py -v
+          $buildPython = Join-Path $env:UV_PROJECT_ENVIRONMENT "Scripts\python.exe"
+          if (-not (Test-Path -LiteralPath $buildPython -PathType Leaf)) { throw 'locked build-tool Python is missing' }
+          & $buildPython tts_more\tests\test_portable_integration.py -v
           if (-not (Select-String -LiteralPath Start.cmd -Pattern 'Invoke-PortableStart.ps1' -Quiet)) { throw 'Start.cmd bypasses the portable controller' }
           if (-not (Test-Path -LiteralPath '使用说明-先看这里.txt' -PathType Leaf)) { throw 'portable root guide is missing' }
       - name: Build bootstrap and prove full is prohibited
         shell: pwsh
-        env:
-          TTS_MORE_BUILD_PYTHON: python
         run: |
+          $buildPython = Join-Path $env:UV_PROJECT_ENVIRONMENT "Scripts\python.exe"
+          if (-not (Test-Path -LiteralPath $buildPython -PathType Leaf)) { throw 'locked build-tool Python is missing' }
+          $env:TTS_MORE_BUILD_PYTHON = $buildPython
           $version = $env:PACKAGE_VERSION -replace '^v', ''
           $version = $version -replace '[^0-9A-Za-z._-]', '-'
           .\Build-Package.ps1 -Profile Bootstrap -Device CPU -Version $version
           $candidateZips = @(Get-ChildItem artifacts\portable\bootstrap\*.zip)
           if ($candidateZips.Count -ne 1) { throw "expected exactly one bootstrap ZIP" }
           foreach ($candidateZip in $candidateZips) {
-            python tts_more\portable_packages.py audit-release --zip $candidateZip.FullName
+            & $buildPython tts_more\portable_packages.py audit-release --zip $candidateZip.FullName
             if ($LASTEXITCODE -ne 0) { throw "bootstrap ZIP release audit failed" }
           }
-          python tts_more\portable_packages.py audit-release-assets --directory artifacts\portable\bootstrap --expected-component cosyvoice --expected-version $version
+          & $buildPython tts_more\portable_packages.py audit-release-assets --directory artifacts\portable\bootstrap --expected-component cosyvoice --expected-version $version
           if ($LASTEXITCODE -ne 0) { throw "bootstrap release asset set or embedded package_profile audit failed" }
           $blocked = $false
           try { .\Build-Package.ps1 -Profile Full -Device CPU -Version $version } catch { $blocked = $_.Exception.Message -match "profile=full" }
@@ -71,11 +82,19 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: write
+    env:
+      UV_PROJECT_ENVIRONMENT: ${{ runner.temp }}/tts-more-build-tools
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-python@v6
         with:
-          python-version: "3.10"
+          python-version: "3.11"
+      - name: Install frozen uv tool
+        uses: astral-sh/setup-uv@08807647e7069bb48b6ef5acd8ec9567f424441b # v8.1.0
+        with:
+          version: "0.11.28"
+      - name: Sync locked build audit tools
+        run: uv sync --locked --project tts_more/build-tools
       - uses: actions/download-artifact@v8
         with:
           name: cosyvoice-windows-bootstrap
@@ -84,18 +103,23 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
+          build_python="$UV_PROJECT_ENVIRONMENT/bin/python"
+          if [ ! -x "$build_python" ]; then
+            echo "locked build-tool Python is missing" >&2
+            exit 1
+          fi
           version="${GITHUB_REF_NAME#v}"
           found_zip=false
           for candidate_zip in release-assets/*.zip; do
             [ -e "$candidate_zip" ] || continue
             found_zip=true
-            python tts_more/portable_packages.py audit-release --zip "$candidate_zip"
+            "$build_python" tts_more/portable_packages.py audit-release --zip "$candidate_zip"
           done
           if [ "$found_zip" != true ]; then
             echo "no Bootstrap ZIP was downloaded" >&2
             exit 1
           fi
-          python tts_more/portable_packages.py audit-release-assets --directory release-assets --expected-component cosyvoice --expected-version "$version"
+          "$build_python" tts_more/portable_packages.py audit-release-assets --directory release-assets --expected-component cosyvoice --expected-version "$version"
           shopt -s nullglob
           assets=(
             release-assets/*.zip
@@ -135,7 +159,7 @@ jobs:
           for asset_name in "${local_asset_names[@]}"; do
             verify_asset_args+=(--expected-name "$asset_name")
           done
-          python tts_more/verify-release-asset-set.py \
+          "$build_python" tts_more/verify-release-asset-set.py \
             --repository "$GITHUB_REPOSITORY" \
             --tag "$GITHUB_REF_NAME" \
             "${verify_asset_args[@]}"

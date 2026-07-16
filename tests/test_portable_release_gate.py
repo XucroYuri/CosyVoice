@@ -101,7 +101,7 @@ def test_release_workflow_audits_before_and_after_upload() -> None:
     )
     publish = workflow.split("- name: Publish bootstrap assets only", 1)[1]
     upload = 'gh release upload "$GITHUB_REF_NAME" "${assets[@]}" --clobber'
-    gate_call = "python tts_more/verify-release-asset-set.py"
+    gate_call = '"$build_python" tts_more/verify-release-asset-set.py'
 
     assert "audit-release-assets --directory" in workflow
     assert "comm -23" in publish
@@ -110,3 +110,25 @@ def test_release_workflow_audits_before_and_after_upload() -> None:
     assert publish.index(upload) < publish.index(gate_call)
     assert 'verify_asset_args+=(--expected-name "$asset_name")' in publish
     assert "release delete-asset" not in publish
+
+
+def test_release_workflow_uses_locked_isolated_build_tools_for_all_audits() -> None:
+    workflow = (ROOT / ".github" / "workflows" / "portable-release.yml").read_text(
+        encoding="utf-8"
+    )
+    bootstrap, release = workflow.split("  github-release:", 1)
+
+    assert workflow.count('python-version: "3.11"') == 2
+    assert workflow.count("astral-sh/setup-uv@08807647e7069bb48b6ef5acd8ec9567f424441b") == 2
+    assert workflow.count("UV_PROJECT_ENVIRONMENT: ${{ runner.temp }}/tts-more-build-tools") == 2
+    assert workflow.count("uv sync --locked --project tts_more/build-tools") == 2
+
+    assert '$env:TTS_MORE_BUILD_PYTHON = $buildPython' in bootstrap
+    assert '& $buildPython tts_more\\tests\\test_portable_integration.py -v' in bootstrap
+    assert bootstrap.count("& $buildPython tts_more\\portable_packages.py") >= 2
+    assert 'build_python="$UV_PROJECT_ENVIRONMENT/bin/python"' in release
+    assert release.count('"$build_python" tts_more/portable_packages.py') >= 2
+    assert '"$build_python" tts_more/verify-release-asset-set.py' in release
+
+    assert "python tts_more" not in workflow
+    assert "python -m pip" not in workflow
