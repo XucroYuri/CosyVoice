@@ -61,8 +61,17 @@ jobs:
           }
           & $buildPython tts_more\portable_packages.py audit-release-assets --directory artifacts\portable\bootstrap --expected-component cosyvoice --expected-version $version
           if ($LASTEXITCODE -ne 0) { throw "bootstrap release asset set or embedded package_profile audit failed" }
-          $blocked = $false
-          try { .\Build-Package.ps1 -Profile Full -Device CPU -Version $version } catch { $blocked = $_.Exception.Message -match "profile=full" }
+          $fullHost = (Get-Process -Id $PID).Path
+          $fullErrorActionPreference = $ErrorActionPreference
+          try {
+            $ErrorActionPreference = "Continue"
+            $fullOutput = @(& $fullHost -NoProfile -NonInteractive -File .\Build-Package.ps1 -Profile Full -Device CPU -Version $version 2>&1)
+            $fullExitCode = $LASTEXITCODE
+          }
+          finally {
+            $ErrorActionPreference = $fullErrorActionPreference
+          }
+          $blocked = $fullExitCode -ne 0 -and ([string]::Join("`n", @($fullOutput)) -match "profile=full")
           if (!$blocked) { throw "full profile was not blocked in GitHub Actions" }
       - uses: actions/upload-artifact@v7
         with:

@@ -132,3 +132,38 @@ def test_release_workflow_uses_locked_isolated_build_tools_for_all_audits() -> N
 
     assert "python tts_more" not in workflow
     assert "python -m pip" not in workflow
+
+
+def test_release_workflow_verifies_full_refusal_by_child_exit_code_and_output() -> None:
+    workflow = (ROOT / ".github" / "workflows" / "portable-release.yml").read_text(
+        encoding="utf-8"
+    )
+    build = workflow.split("- name: Build bootstrap and prove full is prohibited", 1)[1]
+    build = build.split("- uses: actions/upload-artifact", 1)[0]
+
+    host = "$fullHost = (Get-Process -Id $PID).Path"
+    save_preference = "$fullErrorActionPreference = $ErrorActionPreference"
+    capture_preference = '$ErrorActionPreference = "Continue"'
+    invocation = (
+        "$fullOutput = @(& $fullHost -NoProfile -NonInteractive -File "
+        ".\\Build-Package.ps1 -Profile Full -Device CPU -Version $version 2>&1)"
+    )
+    exit_code = "$fullExitCode = $LASTEXITCODE"
+    restore_preference = "$ErrorActionPreference = $fullErrorActionPreference"
+    decision = (
+        '$blocked = $fullExitCode -ne 0 -and '
+        '([string]::Join("`n", @($fullOutput)) -match "profile=full")'
+    )
+
+    assert host in build
+    assert save_preference in build
+    assert capture_preference in build
+    assert invocation in build
+    assert exit_code in build
+    assert restore_preference in build
+    assert decision in build
+    assert build.index(host) < build.index(save_preference) < build.index(capture_preference)
+    assert build.index(capture_preference) < build.index(invocation) < build.index(exit_code)
+    assert build.index(exit_code) < build.index(restore_preference)
+    assert build.index(exit_code) < build.index(decision)
+    assert "try { .\\Build-Package.ps1 -Profile Full" not in build
