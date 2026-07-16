@@ -39,18 +39,31 @@ jobs:
         env:
           TTS_MORE_BUILD_PYTHON: python
         run: |
-          .\Build-Package.ps1 -Profile Bootstrap -Device CPU -Version $env:PACKAGE_VERSION
-          $zip = @(Get-ChildItem artifacts\portable\bootstrap\*.zip)
-          if ($zip.Count -ne 1) { throw "expected exactly one bootstrap ZIP" }
-          python tts_more\portable_packages.py audit-release --zip $zip[0].FullName
+          $version = $env:PACKAGE_VERSION -replace '^v', ''
+          $version = $version -replace '[^0-9A-Za-z._-]', '-'
+          .\Build-Package.ps1 -Profile Bootstrap -Device CPU -Version $version
+          $candidateZips = @(Get-ChildItem artifacts\portable\bootstrap\*.zip)
+          if ($candidateZips.Count -ne 1) { throw "expected exactly one bootstrap ZIP" }
+          foreach ($candidateZip in $candidateZips) {
+            python tts_more\portable_packages.py audit-release --zip $candidateZip.FullName
+            if ($LASTEXITCODE -ne 0) { throw "bootstrap ZIP release audit failed" }
+          }
+          python tts_more\portable_packages.py audit-release-assets --directory artifacts\portable\bootstrap --expected-component cosyvoice --expected-version $version
+          if ($LASTEXITCODE -ne 0) { throw "bootstrap release asset set or embedded package_profile audit failed" }
           $blocked = $false
-          try { .\Build-Package.ps1 -Profile Full -Device CPU -Version $env:PACKAGE_VERSION } catch { $blocked = $_.Exception.Message -match "profile=full" }
+          try { .\Build-Package.ps1 -Profile Full -Device CPU -Version $version } catch { $blocked = $_.Exception.Message -match "profile=full" }
           if (!$blocked) { throw "full profile was not blocked in GitHub Actions" }
       - uses: actions/upload-artifact@v7
         with:
           name: cosyvoice-windows-bootstrap
           if-no-files-found: error
-          path: artifacts/portable/bootstrap/*
+          path: |
+            artifacts/portable/bootstrap/*.zip
+            artifacts/portable/bootstrap/*.sha256
+            artifacts/portable/bootstrap/*.spdx.json
+            artifacts/portable/bootstrap/*.licenses.json
+            artifacts/portable/bootstrap/*.provenance.json
+            artifacts/portable/bootstrap/*.acceptance.json
 
   github-release:
     if: startsWith(github.ref, 'refs/tags/v')
@@ -59,6 +72,10 @@ jobs:
     permissions:
       contents: write
     steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.10"
       - uses: actions/download-artifact@v8
         with:
           name: cosyvoice-windows-bootstrap
@@ -67,6 +84,58 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          if find release-assets -type f -name '*-full.zip' | grep -q .; then exit 1; fi
-          gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1 || gh release create "$GITHUB_REF_NAME" --verify-tag --generate-notes
-          gh release upload "$GITHUB_REF_NAME" release-assets/* --clobber
+          version="${GITHUB_REF_NAME#v}"
+          found_zip=false
+          for candidate_zip in release-assets/*.zip; do
+            [ -e "$candidate_zip" ] || continue
+            found_zip=true
+            python tts_more/portable_packages.py audit-release --zip "$candidate_zip"
+          done
+          if [ "$found_zip" != true ]; then
+            echo "no Bootstrap ZIP was downloaded" >&2
+            exit 1
+          fi
+          python tts_more/portable_packages.py audit-release-assets --directory release-assets --expected-component cosyvoice --expected-version "$version"
+          shopt -s nullglob
+          assets=(
+            release-assets/*.zip
+            release-assets/*.zip.sha256
+            release-assets/*.zip.spdx.json
+            release-assets/*.zip.licenses.json
+            release-assets/*.zip.provenance.json
+            release-assets/*.zip.acceptance.json
+          )
+          mapfile -t local_asset_names < <(printf '%s\n' "${assets[@]##*/}" | LC_ALL=C sort -u)
+          if [ "${#local_asset_names[@]}" -ne 6 ]; then
+            echo "local Bootstrap release allowlist must contain exactly six assets" >&2
+            exit 1
+          fi
+          remote_asset_names=()
+          release_exists=false
+          if gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1; then
+            release_exists=true
+            mapfile -t remote_asset_names < <(gh release view "$GITHUB_REF_NAME" --json assets --jq '.assets[].name' | LC_ALL=C sort -u)
+            unexpected_remote="$(comm -23 <(printf '%s\n' "${remote_asset_names[@]}") <(printf '%s\n' "${local_asset_names[@]}"))"
+            if [ -n "$unexpected_remote" ]; then
+              echo "existing GitHub Release has foreign, Full, old-version, or extra assets:" >&2
+              printf '%s\n' "$unexpected_remote" >&2
+              exit 1
+            fi
+          fi
+          mapfile -t post_upload_union < <(printf '%s\n' "${local_asset_names[@]}" "${remote_asset_names[@]}" | LC_ALL=C sort -u)
+          if ! diff -u <(printf '%s\n' "${local_asset_names[@]}") <(printf '%s\n' "${post_upload_union[@]}"); then
+            echo "GitHub Release asset union would exceed the exact local six-asset allowlist" >&2
+            exit 1
+          fi
+          if [ "$release_exists" != true ]; then
+            gh release create "$GITHUB_REF_NAME" --verify-tag --generate-notes
+          fi
+          gh release upload "$GITHUB_REF_NAME" "${assets[@]}" --clobber
+          verify_asset_args=()
+          for asset_name in "${local_asset_names[@]}"; do
+            verify_asset_args+=(--expected-name "$asset_name")
+          done
+          python tts_more/verify-release-asset-set.py \
+            --repository "$GITHUB_REPOSITORY" \
+            --tag "$GITHUB_REF_NAME" \
+            "${verify_asset_args[@]}"
