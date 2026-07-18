@@ -73,6 +73,7 @@ jobs:
           }
           $blocked = $fullExitCode -ne 0 -and ([string]::Join("`n", @($fullOutput)) -match "profile=full")
           if (!$blocked) { throw "full profile was not blocked in GitHub Actions" }
+          exit 0
       - uses: actions/upload-artifact@v7
         with:
           name: cosyvoice-windows-bootstrap

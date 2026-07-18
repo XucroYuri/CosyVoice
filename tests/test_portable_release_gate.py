@@ -167,3 +167,17 @@ def test_release_workflow_verifies_full_refusal_by_child_exit_code_and_output() 
     assert build.index(exit_code) < build.index(restore_preference)
     assert build.index(exit_code) < build.index(decision)
     assert "try { .\\Build-Package.ps1 -Profile Full" not in build
+
+
+def test_release_workflow_exits_zero_after_expected_full_refusal() -> None:
+    workflow = (ROOT / ".github" / "workflows" / "portable-release.yml").read_text(
+        encoding="utf-8"
+    )
+    build = workflow.split("- name: Build bootstrap and prove full is prohibited", 1)[1]
+    build = build.split("- uses: actions/upload-artifact", 1)[0]
+    rejection = 'if (!$blocked) { throw "full profile was not blocked in GitHub Actions" }'
+    executable_lines = [line.strip() for line in build.splitlines() if line.strip()]
+
+    assert rejection in build
+    assert executable_lines[-1] == "exit 0"
+    assert build.index(rejection) < build.rindex("exit 0")
