@@ -33,6 +33,8 @@ __pycache__/
 
 exp
 data
+/artifacts/portable/
+/runtime/
 raw_wav
 tensorboard
 **/*build*
@@ -50,3 +52,8 @@ pretrained_models/*
 *_pb2_grpc.py
 *_pb2.py
 *.tar
+
+# TTS More portable build recipes are source, not generated build output.
+!/Build-Package.ps1
+!/tts_more/Build-Package.ps1
+!/tts_more/locks/build-constraints.lock.txt
