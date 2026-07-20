@@ -21,7 +21,6 @@ jobs:
     runs-on: windows-latest
     env:
       PACKAGE_VERSION: ${{ inputs.version || (startsWith(github.ref, 'refs/tags/v') && github.ref_name) || '0.2.0-ci' }}
-      UV_PROJECT_ENVIRONMENT: ${{ runner.temp }}/tts-more-build-tools
     steps:
       - uses: actions/checkout@v7
         with:
@@ -35,9 +34,13 @@ jobs:
           version: "0.11.28"
       - name: Sync locked build audit tools
         shell: pwsh
+        env:
+          UV_PROJECT_ENVIRONMENT: ${{ runner.temp }}/tts-more-build-tools
         run: uv sync --locked --project tts_more/build-tools
       - name: Validate one-click portable contract and immutable locks
         shell: pwsh
+        env:
+          UV_PROJECT_ENVIRONMENT: ${{ runner.temp }}/tts-more-build-tools
         run: |
           $buildPython = Join-Path $env:UV_PROJECT_ENVIRONMENT "Scripts\python.exe"
           if (-not (Test-Path -LiteralPath $buildPython -PathType Leaf)) { throw 'locked build-tool Python is missing' }
@@ -46,6 +49,8 @@ jobs:
           if (-not (Test-Path -LiteralPath '使用说明-先看这里.txt' -PathType Leaf)) { throw 'portable root guide is missing' }
       - name: Build bootstrap and prove full is prohibited
         shell: pwsh
+        env:
+          UV_PROJECT_ENVIRONMENT: ${{ runner.temp }}/tts-more-build-tools
         run: |
           $buildPython = Join-Path $env:UV_PROJECT_ENVIRONMENT "Scripts\python.exe"
           if (-not (Test-Path -LiteralPath $buildPython -PathType Leaf)) { throw 'locked build-tool Python is missing' }
@@ -92,8 +97,6 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: write
-    env:
-      UV_PROJECT_ENVIRONMENT: ${{ runner.temp }}/tts-more-build-tools
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-python@v6
@@ -104,6 +107,8 @@ jobs:
         with:
           version: "0.11.28"
       - name: Sync locked build audit tools
+        env:
+          UV_PROJECT_ENVIRONMENT: ${{ runner.temp }}/tts-more-build-tools
         run: uv sync --locked --project tts_more/build-tools
       - uses: actions/download-artifact@v8
         with:
@@ -112,6 +117,7 @@ jobs:
       - name: Publish bootstrap assets only
         env:
           GH_TOKEN: ${{ github.token }}
+          UV_PROJECT_ENVIRONMENT: ${{ runner.temp }}/tts-more-build-tools
         run: |
           build_python="$UV_PROJECT_ENVIRONMENT/bin/python"
           if [ ! -x "$build_python" ]; then
