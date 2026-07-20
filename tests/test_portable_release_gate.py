@@ -120,7 +120,14 @@ def test_release_workflow_uses_locked_isolated_build_tools_for_all_audits() -> N
 
     assert workflow.count('python-version: "3.11"') == 2
     assert workflow.count("astral-sh/setup-uv@08807647e7069bb48b6ef5acd8ec9567f424441b") == 2
-    assert workflow.count("UV_PROJECT_ENVIRONMENT: ${{ runner.temp }}/tts-more-build-tools") == 2
+    runner_temp_env = "UV_PROJECT_ENVIRONMENT: ${{ runner.temp }}/tts-more-build-tools"
+    bootstrap_header, bootstrap_steps = bootstrap.split("    steps:", 1)
+    release_header, release_steps = release.split("    steps:", 1)
+
+    assert runner_temp_env not in bootstrap_header
+    assert runner_temp_env not in release_header
+    assert bootstrap_steps.count(runner_temp_env) == 3
+    assert release_steps.count(runner_temp_env) == 2
     assert workflow.count("uv sync --locked --project tts_more/build-tools") == 2
 
     assert '$env:TTS_MORE_BUILD_PYTHON = $buildPython' in bootstrap
